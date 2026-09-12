@@ -3,160 +3,137 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Stack Tower</title>
+<title>つみき</title>
 <script src="https://www.youtube.com/game_api/v1"></script>
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#12162b;touch-action:none;-webkit-user-select:none;user-select:none;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
+  html,body{margin:0;height:100%;overflow:hidden;background:#e8dcc0;touch-action:none;-webkit-user-select:none;user-select:none}
   canvas{display:block;width:100%;height:100%}
-  #ui{position:fixed;inset:0;pointer-events:none;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:max(24px,env(safe-area-inset-top)) 0 max(48px,env(safe-area-inset-bottom))}
-  #score{font-size:64px;font-weight:800;letter-spacing:-2px;text-shadow:0 4px 0 rgba(0,0,0,.25)}
-  #msg{font-size:18px;opacity:.85;text-align:center;line-height:1.5}
-  #best{font-size:14px;opacity:.6;margin-top:6px}
-  .hidden{display:none}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="ui">
-  <div><div id="score">0</div><div id="best"></div></div>
-  <div id="msg">タップでブロックを積む</div>
-</div>
 <script>
-// ---------- YouTube Playables 連携 ----------
-const YT = {
-  env: typeof ytgame !== 'undefined' && ytgame.IN_PLAYABLES_ENV,
-  audio: true,
-  async init(){
-    if(!this.env) return;
-    this.audio = ytgame.system.isAudioEnabled();
-    ytgame.system.onAudioEnabledChange(v=>this.audio=v);
-    ytgame.system.onPause(()=>pause(true));
-    ytgame.system.onResume(()=>pause(false));
-  },
-  async load(){
-    try{
-      if(this.env){ const s = await ytgame.game.loadData(); return s? JSON.parse(s):{}; }
-      return {};
-    }catch(e){ return {}; }
-  },
-  async save(o){ if(this.env){ try{ await ytgame.game.saveData(JSON.stringify(o)); }catch(e){} } },
-  score(v){ if(this.env) try{ ytgame.engagement.sendScore({value:v}); }catch(e){} },
-  async ad(){ if(this.env && ytgame.ads) try{ await ytgame.ads.requestInterstitialAd(); }catch(e){} },
-  firstFrame(){ if(this.env) ytgame.game.firstFrameReady(); },
-  ready(){ if(this.env) ytgame.game.gameReady(); }
-};
-
-// ---------- 音 ----------
+// ===== YouTube Playables =====
+const YT={env:typeof ytgame!=='undefined'&&ytgame.IN_PLAYABLES_ENV,audio:true,
+ init(){if(!this.env)return;this.audio=ytgame.system.isAudioEnabled();ytgame.system.onAudioEnabledChange(v=>this.audio=v);ytgame.system.onPause(()=>paused=true);ytgame.system.onResume(()=>paused=false);},
+ async load(){try{if(this.env){const s=await ytgame.game.loadData();return s?JSON.parse(s):{};}}catch(e){}return{};},
+ async save(o){if(this.env)try{await ytgame.game.saveData(JSON.stringify(o));}catch(e){}},
+ score(v){if(this.env)try{ytgame.engagement.sendScore({value:v});}catch(e){}},
+ async ad(){if(this.env&&ytgame.ads)try{await ytgame.ads.requestInterstitialAd();}catch(e){}},
+ firstFrame(){if(this.env)ytgame.game.firstFrameReady();},ready(){if(this.env)ytgame.game.gameReady();},
+ lang(){try{if(this.env)return ytgame.system.getLanguage();}catch(e){}return navigator.language||'en';}};
+const STR={
+ ja:{title:'つみき',how1:'タイミングよくタップして',how2:'高く積みあげよう',tap:'画面をタップ',best:'これまでの記録 ',perfect:'ぴったり',over:'おしまい',unit:' 段',newrec:'新記録',retry:'もう一度は画面をタップ'},
+ en:{title:'STACK',how1:'Tap at the right moment',how2:'and build it high',tap:'Tap to start',best:'Best ',perfect:'PERFECT',over:'GAME OVER',unit:'',newrec:'NEW',retry:'Tap to play again'}};
+let L=STR.en;
 let actx=null;
-function beep(f=440,d=.08,type='square',g=.06){
-  if(!YT.audio) return;
-  try{
-    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
-    const o=actx.createOscillator(), v=actx.createGain();
-    o.type=type;o.frequency.value=f;v.gain.value=g;
-    o.connect(v);v.connect(actx.destination);
-    o.start();v.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.stop(actx.currentTime+d);
-  }catch(e){}
-}
+function tone(f,d,type,g){if(!YT.audio)return;try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),v=actx.createGain();o.type=type||'triangle';o.frequency.value=f;v.gain.value=g||.08;o.connect(v);v.connect(actx.destination);o.start();v.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.stop(actx.currentTime+d);}catch(e){}}
+function knock(){tone(180,.07,'square',.05);tone(90,.12,'triangle',.08);}
+function ding(){tone(1046,.15,'sine',.07);setTimeout(()=>tone(1568,.25,'sine',.07),70);}
 
-// ---------- ゲーム ----------
-const cv=document.getElementById('c'), ctx=cv.getContext('2d');
-const scoreEl=document.getElementById('score'), msgEl=document.getElementById('msg'), bestEl=document.getElementById('best');
-let W,H,dpr;
-function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}
+// ===== 見た目の定義 =====
+const PAPER='#e8dcc0', INK='#3a2a1c', RED='#b8412e';
+const WOODS=[['#d9a066','#b8783f'],['#c98b5a','#a5652f'],['#e3b784','#c08b55'],['#b97a4b','#93552a']];
+const FONT_NUM='700 Hiragino Mincho ProN, Yu Mincho, "Noto Serif JP", serif';
+const FONT_UI='Hiragino Maru Gothic ProN, "Rounded Mplus 1c", Hiragino Sans, sans-serif';
+
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H;function resize(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);}
 addEventListener('resize',resize);resize();
 
-const BH=28;               // ブロック高さ
-let blocks, cur, dir, speed, score, best=0, state, camY, camTarget, paused=false, debris, games=0, hue0;
+const BH=30;
+let blocks,cur,dir,speed,score=0,best=0,state='title',camY=0,camT=0,debris=[],paused=false,games=0,pops=[],wobble=0;
+const groundY=()=>H*.86;
 
-function hue(i){return (hue0+i*9)%360}
-function reset(){
-  blocks=[{x:W*.25,w:W*.5,y:0}];
-  score=0; camY=0; camTarget=0; debris=[]; speed=2.6; hue0=Math.random()*360;
-  spawn(); state='play';
-  scoreEl.textContent='0'; msgEl.textContent='タップで止める';
-}
-function spawn(){
-  const top=blocks[blocks.length-1];
-  dir = blocks.length%2? 1:-1;
-  cur={x: dir>0? -top.w : W, w: top.w, y: blocks.length*BH};
-  speed = 2.6 + score*0.12;
-}
+function reset(){blocks=[{x:W/2-90,w:180,y:0,t:0}];score=0;camY=0;camT=0;debris=[];pops=[];spawn();state='play';}
+function spawn(){const top=blocks[blocks.length-1];dir=blocks.length%2?1:-1;cur={x:dir>0?-top.w:W,w:top.w,y:blocks.length*BH,t:blocks.length%WOODS.length};speed=2.4+Math.min(score,40)*0.11;}
 function drop(){
   const top=blocks[blocks.length-1];
-  const overlap = Math.min(cur.x+cur.w, top.x+top.w) - Math.max(cur.x, top.x);
-  if(overlap<=4){ // 失敗
-    debris.push({x:cur.x,w:cur.w,y:cur.y,vy:0,vx:dir*2,h:hue(blocks.length)});
-    gameOver(); return;
-  }
-  const nx = Math.max(cur.x, top.x);
-  // はみ出し部分を落とす
-  if(cur.x<top.x) debris.push({x:cur.x,w:top.x-cur.x,y:cur.y,vy:0,vx:-2,h:hue(blocks.length)});
-  if(cur.x+cur.w>top.x+top.w) debris.push({x:top.x+top.w,w:cur.x+cur.w-top.x-top.w,y:cur.y,vy:0,vx:2,h:hue(blocks.length)});
-  const perfect = Math.abs(cur.x-top.x)<6;
-  const nb={x:perfect?top.x:nx, w:perfect?top.w:overlap, y:cur.y};
-  if(perfect){ beep(880,.12,'sine',.08); setTimeout(()=>beep(1320,.12,'sine',.08),60); flash=1; }
-  else beep(300+overlap,.06);
-  blocks.push(nb); score++; scoreEl.textContent=score;
-  if(blocks.length*BH > H*.45) camTarget = blocks.length*BH - H*.45;
+  const ov=Math.min(cur.x+cur.w,top.x+top.w)-Math.max(cur.x,top.x);
+  if(ov<=4){debris.push({...cur,vy:0,vx:dir*2,rot:0,vr:dir*.05});over();return;}
+  if(cur.x<top.x)debris.push({x:cur.x,w:top.x-cur.x,y:cur.y,t:cur.t,vy:0,vx:-1.5,rot:0,vr:-.06});
+  if(cur.x+cur.w>top.x+top.w)debris.push({x:top.x+top.w,w:cur.x+cur.w-top.x-top.w,y:cur.y,t:cur.t,vy:0,vx:1.5,rot:0,vr:.06});
+  const perfect=Math.abs(cur.x-top.x)<7;
+  blocks.push({x:perfect?top.x:Math.max(cur.x,top.x),w:perfect?top.w:ov,y:cur.y,t:cur.t});
+  score++;
+  if(perfect){ding();pops.push({txt:L.perfect,x:W/2,y:groundY()-(cur.y-camY)-BH-30,life:1});}else knock();
+  wobble=1;
+  if(blocks.length*BH>H*.42)camT=blocks.length*BH-H*.42;
   spawn();
 }
-let flash=0;
-async function gameOver(){
-  state='over'; beep(120,.35,'sawtooth',.08);
+async function over(){
+  state='over';tone(70,.5,'sawtooth',.1);
   if(score>best){best=score;await YT.save({best});}
-  bestEl.textContent='ベスト '+best;
-  YT.score(score);
-  msgEl.textContent='ゲームオーバー\nタップでもう一度';
-  games++;
-  if(games%3===0) await YT.ad();
+  YT.score(score);games++;if(games%3===0)await YT.ad();
 }
-function pause(p){paused=p;}
+cv.addEventListener('pointerdown',e=>{e.preventDefault();if(paused)return;if(state==='play')drop();else reset();},{passive:false});
 
-function tap(e){
-  e.preventDefault();
-  if(paused) return;
-  if(state==='play') drop();
-  else if(state==='over') reset();
-  else if(state==='title') reset();
-}
-cv.addEventListener('pointerdown',tap,{passive:false});
-
-function drawBlock(b,h,alpha=1){
-  ctx.globalAlpha=alpha;
-  const y=H- (b.y-camY) - BH - H*.12;
-  ctx.fillStyle=`hsl(${h} 70% 55%)`;ctx.fillRect(b.x,y,b.w,BH);
-  ctx.fillStyle=`hsl(${h} 70% 68%)`;ctx.fillRect(b.x,y,b.w,5);
-  ctx.fillStyle=`hsl(${h} 70% 40%)`;ctx.fillRect(b.x,y+BH-5,b.w,5);
+// ===== 描画 =====
+function block(b,alpha){
+  const [lite,dark]=WOODS[b.t%WOODS.length];
+  const y=groundY()-(b.y-camY)-BH;
+  ctx.globalAlpha=alpha||1;
+  ctx.fillStyle=dark;ctx.fillRect(b.x,y+4,b.w,BH-4);
+  ctx.fillStyle=lite;ctx.fillRect(b.x,y,b.w,BH-5);
+  // 木目
+  ctx.strokeStyle=dark;ctx.lineWidth=1;ctx.globalAlpha=(alpha||1)*.45;
+  for(let gx=b.x+8;gx<b.x+b.w-6;gx+=14){ctx.beginPath();ctx.moveTo(gx,y+5);ctx.quadraticCurveTo(gx+4,y+BH/2,gx,y+BH-8);ctx.stroke();}
+  ctx.globalAlpha=alpha||1;
+  ctx.strokeStyle=INK;ctx.lineWidth=2;ctx.strokeRect(b.x+1,y+1,b.w-2,BH-2);
   ctx.globalAlpha=1;
+}
+function paper(){
+  ctx.fillStyle=PAPER;ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(58,42,28,.07)';ctx.lineWidth=1;
+  for(let y=((-camY*.3)%28+28)%28;y<H;y+=28){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  // 床
+  const gy=groundY();
+  ctx.fillStyle='#cdbb96';ctx.fillRect(0,gy+camY,W,H);
+  ctx.strokeStyle=INK;ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,gy+camY);ctx.lineTo(W,gy+camY);ctx.stroke();
+}
+function text(s,x,y,size,font,color,align){ctx.font=size+'px '+font;ctx.fillStyle=color;ctx.textAlign=align||'center';ctx.textBaseline='middle';ctx.fillText(s,x,y);}
+function seal(x,y,s,size){ // 朱印っぽい四角
+  ctx.save();ctx.translate(x,y);ctx.rotate(-.06);
+  ctx.strokeStyle=RED;ctx.lineWidth=3;ctx.strokeRect(-size/2,-size/2,size,size);
+  text(s,0,2,s.length>3?size*.28:size*.55,FONT_NUM,RED);ctx.restore();
+}
+function hud(){
+  text(String(score),W/2,H*.13,72,FONT_NUM,INK);
+  if(best)text(L.best+best,W/2,H*.13+52,15,FONT_UI,'rgba(58,42,28,.6)');
 }
 let last=0;
 function loop(t){
-  requestAnimationFrame(loop);
-  if(paused) {last=t;return;}
-  const dt=Math.min((t-last)/16.7,3); last=t;
-  // 背景
-  const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,`hsl(${(hue0||220)} 45% 14%)`);g.addColorStop(1,`hsl(${(hue0||220)+40} 45% 26%)`);
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-  if(flash>0){ctx.fillStyle=`rgba(255,255,255,${flash*.25})`;ctx.fillRect(0,0,W,H);flash-=.06*dt;}
-  camY += (camTarget-camY)*.1*dt;
-  blocks.forEach((b,i)=>drawBlock(b,hue(i)));
-  if(state==='play'){
-    cur.x += dir*speed*dt;
-    if(dir>0 && cur.x>W) cur.x=-cur.w; if(dir<0 && cur.x+cur.w<0) cur.x=W;
-    drawBlock(cur,hue(blocks.length));
-  }
+  requestAnimationFrame(loop);if(paused){last=t;return;}
+  const dt=Math.min((t-last)/16.7,3);last=t;
+  camY+=(camT-camY)*.1*dt;
+  paper();
+  ctx.save();
+  if(wobble>0){ctx.translate(Math.sin(t*.05)*wobble*2,0);wobble-=.08*dt;}
+  blocks.forEach(b=>block(b));
+  if(state==='play'){cur.x+=dir*speed*dt;if(dir>0&&cur.x>W)cur.x=-cur.w;if(dir<0&&cur.x+cur.w<0)cur.x=W;block(cur);}
+  ctx.restore();
   debris=debris.filter(d=>d.y>camY-H);
-  debris.forEach(d=>{d.vy-=.5*dt;d.y+=d.vy*dt;d.x+=d.vx*dt;drawBlock(d,d.h,.8);});
+  debris.forEach(d=>{d.vy-=.45*dt;d.y+=d.vy*dt;d.x+=d.vx*dt;d.rot+=d.vr*dt;
+    ctx.save();const cx=d.x+d.w/2,cy=groundY()-(d.y-camY)-BH/2;ctx.translate(cx,cy);ctx.rotate(d.rot);ctx.translate(-cx,-cy);block(d,.85);ctx.restore();});
+  pops=pops.filter(p=>p.life>0);pops.forEach(p=>{p.life-=.02*dt;p.y-=.6*dt;ctx.globalAlpha=Math.min(1,p.life*2);seal(p.x,p.y,p.txt,60);ctx.globalAlpha=1;});
+
+  if(state==='title'){
+    text(L.title,W/2,H*.3,64,FONT_NUM,INK);
+    text(L.how1,W/2,H*.3+60,17,FONT_UI,INK);
+    text(L.how2,W/2,H*.3+84,17,FONT_UI,INK);
+    if(Math.floor(t/500)%2)text(L.tap,W/2,H*.62,16,FONT_UI,'rgba(58,42,28,.55)');
+  }else if(state==='over'){
+    ctx.fillStyle='rgba(232,220,192,.82)';ctx.fillRect(0,0,W,H);
+    text(L.over,W/2,H*.32,44,FONT_NUM,INK);
+    text(score+L.unit,W/2,H*.32+70,56,FONT_NUM,INK);
+    if(score>=best&&score>0)seal(W/2+110,H*.32+62,L.newrec,66);
+    text(L.retry,W/2,H*.62,16,FONT_UI,'rgba(58,42,28,.6)');
+  }else hud();
 }
 (async()=>{
-  await YT.init();
-  const s=await YT.load(); best=s.best||0; bestEl.textContent=best?'ベスト '+best:'';
-  hue0=Math.random()*360; blocks=[{x:W*.25,w:W*.5,y:0}]; cur={x:0,w:0,y:BH}; debris=[]; camY=0;camTarget=0; state='title';
-  YT.firstFrame();
-  requestAnimationFrame(loop);
-  YT.ready();
+  YT.init();L=YT.lang().toLowerCase().startsWith('ja')?STR.ja:STR.en;document.title=L.title;const s=await YT.load();best=s.best||0;
+  blocks=[{x:W/2-90,w:180,y:0,t:0}];
+  YT.firstFrame();requestAnimationFrame(loop);YT.ready();
 })();
 </script>
 </body>

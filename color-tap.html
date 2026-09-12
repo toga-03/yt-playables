@@ -3,94 +3,107 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Color Tap</title>
+<title>いろテスト</title>
 <script src="https://www.youtube.com/game_api/v1"></script>
 <style>
-  :root{--bg:#1c1f2e;--fg:#f4f4f8}
-  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);touch-action:manipulation;-webkit-user-select:none;user-select:none;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
-  #app{height:100%;display:flex;flex-direction:column;padding:max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom));box-sizing:border-box}
-  #top{display:flex;justify-content:space-between;align-items:baseline}
-  #score{font-size:44px;font-weight:900}
-  #best{font-size:13px;opacity:.55}
-  #bar{height:10px;background:#333850;border-radius:5px;overflow:hidden;margin:14px 0}
-  #fill{height:100%;background:#fff;width:100%;transform-origin:left}
-  #word{flex:1;display:flex;align-items:center;justify-content:center;font-size:72px;font-weight:900;letter-spacing:.02em}
-  #grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;height:44vh}
-  .b{border:none;border-radius:22px;font-size:0;cursor:pointer;box-shadow:inset 0 -8px 0 rgba(0,0,0,.2);transition:transform .05s}
-  .b:active{transform:scale(.95)}
-  #ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(28,31,46,.92);text-align:center;padding:30px}
-  #ov h1{font-size:52px;margin:0;font-weight:900}
-  #ov p{margin:0;font-size:18px;line-height:1.6;opacity:.85;white-space:pre-line}
-  #ov button{margin-top:20px;font-size:20px;font-weight:700;padding:16px 48px;border-radius:999px;border:none;background:#fff;color:#1c1f2e;cursor:pointer}
+  :root{--paper:#f5efe0;--ink:#2b2b2b;--pen:#c8322b;--rule:#c9c0aa}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);touch-action:manipulation;-webkit-user-select:none;user-select:none;
+    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif}
+  body{background-image:repeating-linear-gradient(0deg,transparent 0 31px,var(--rule) 31px 32px)}
+  #app{height:100%;box-sizing:border-box;display:flex;flex-direction:column;padding:max(18px,env(safe-area-inset-top)) 22px max(18px,env(safe-area-inset-bottom));border-left:2px solid var(--pen);margin-left:28px}
+  #head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--ink);padding-bottom:6px}
+  #head .t{font-size:22px;letter-spacing:.2em}
+  #head .n{font-size:14px}
+  #q{font-size:15px;margin:22px 0 0}
+  #wordbox{position:relative;flex:1;display:flex;align-items:center;justify-content:center;min-height:120px}
+  #word{font-size:84px;font-weight:700;letter-spacing:.04em;line-height:1}
+  #mark{position:absolute;font-size:150px;color:var(--pen);opacity:0;pointer-events:none;transform:rotate(-8deg) scale(1.2);font-family:"Hiragino Sans",sans-serif;font-weight:200}
+  #mark.on{animation:stamp .35s forwards}
+  @keyframes stamp{0%{opacity:0;transform:rotate(-8deg) scale(1.5)}60%{opacity:.9;transform:rotate(-8deg) scale(1)}100%{opacity:.85;transform:rotate(-8deg) scale(1)}}
+  #timer{height:3px;background:var(--rule);margin:0 0 16px;position:relative}
+  #fill{position:absolute;inset:0;background:var(--ink);transform-origin:left}
+  #grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 14px;padding:0 4px 6px}
+  .chip{height:70px;border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink);cursor:pointer;font-size:0;transition:transform .06s,box-shadow .06s}
+  .chip:nth-child(1){transform:rotate(-1.2deg)}.chip:nth-child(2){transform:rotate(.8deg)}.chip:nth-child(3){transform:rotate(.6deg)}.chip:nth-child(4){transform:rotate(-.9deg)}
+  .chip:active{transform:translate(3px,3px);box-shadow:0 0 0 var(--ink)}
+  #sheet{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(43,43,43,.35)}
+  #card{background:var(--paper);border:2px solid var(--ink);padding:28px 30px;width:min(78vw,300px);text-align:center;position:relative;transform:rotate(-1deg)}
+  #card h1{font-size:26px;letter-spacing:.2em;margin:0 0 10px;font-weight:700}
+  #card p{margin:6px 0;font-size:15px;line-height:1.7}
+  #card .big{font-size:56px;font-weight:700;margin:6px 0;color:var(--pen)}
+  #card button{margin-top:16px;font:inherit;font-size:16px;letter-spacing:.15em;padding:12px 34px;background:var(--paper);border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink);cursor:pointer}
+  #card button:active{transform:translate(3px,3px);box-shadow:none}
+  .hanko{position:absolute;top:-16px;right:-16px;width:58px;height:58px;font-size:14px;text-align:center;line-height:1.1;border:3px solid var(--pen);color:var(--pen);display:flex;align-items:center;justify-content:center;letter-spacing:.02em;transform:rotate(12deg);background:var(--paper)}
   .hidden{display:none!important}
-  .shake{animation:sh .3s}
-  @keyframes sh{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="top"><div id="score">0</div><div id="best"></div></div>
-  <div id="bar"><div id="fill"></div></div>
-  <div id="word">あか</div>
+  <div id="head"><span class="t" id="t-title"></span><span class="n"><span id="t-rec"></span><span id="best">0</span><span id="t-recU"></span></span></div>
+  <p id="q"><span id="t-qp"></span><span id="qn">1</span><span id="t-q"></span></p>
+  <div id="wordbox"><div id="word">あか</div><div id="mark">○</div></div>
+  <div id="timer"><div id="fill"></div></div>
   <div id="grid"></div>
 </div>
-<div id="ov">
-  <h1>Color Tap</h1>
-  <p>文字が「表す色」をタップ。
-文字の色に惑わされるな。</p>
-  <button id="start">スタート</button>
+<div id="sheet">
+  <div id="card">
+    <div class="hanko hidden" id="hanko"></div>
+    <h1 id="ttl"></h1>
+    <p id="body"></p>
+    <div class="big hidden" id="pts">0</div>
+    <button id="start">はじめる</button>
+  </div>
 </div>
 <script>
-const YT = {
-  env: typeof ytgame !== 'undefined' && ytgame.IN_PLAYABLES_ENV, audio:true,
-  init(){ if(!this.env) return; this.audio=ytgame.system.isAudioEnabled(); ytgame.system.onAudioEnabledChange(v=>this.audio=v); ytgame.system.onPause(()=>paused=true); ytgame.system.onResume(()=>{paused=false;lastT=performance.now();}); },
-  async load(){ try{ if(this.env){const s=await ytgame.game.loadData(); return s?JSON.parse(s):{};} }catch(e){} return {}; },
-  async save(o){ if(this.env) try{ await ytgame.game.saveData(JSON.stringify(o)); }catch(e){} },
-  score(v){ if(this.env) try{ ytgame.engagement.sendScore({value:v}); }catch(e){} },
-  async ad(){ if(this.env&&ytgame.ads) try{ await ytgame.ads.requestInterstitialAd(); }catch(e){} },
-  firstFrame(){ if(this.env) ytgame.game.firstFrameReady(); }, ready(){ if(this.env) ytgame.game.gameReady(); }
-};
+const YT={env:typeof ytgame!=='undefined'&&ytgame.IN_PLAYABLES_ENV,audio:true,
+ init(){if(!this.env)return;this.audio=ytgame.system.isAudioEnabled();ytgame.system.onAudioEnabledChange(v=>this.audio=v);ytgame.system.onPause(()=>paused=true);ytgame.system.onResume(()=>{paused=false;lastT=performance.now();});},
+ async load(){try{if(this.env){const s=await ytgame.game.loadData();return s?JSON.parse(s):{};}}catch(e){}return{};},
+ async save(o){if(this.env)try{await ytgame.game.saveData(JSON.stringify(o));}catch(e){}},
+ score(v){if(this.env)try{ytgame.engagement.sendScore({value:v});}catch(e){}},
+ async ad(){if(this.env&&ytgame.ads)try{await ytgame.ads.requestInterstitialAd();}catch(e){}},
+ firstFrame(){if(this.env)ytgame.game.firstFrameReady();},ready(){if(this.env)ytgame.game.gameReady();},
+ lang(){try{if(this.env)return ytgame.system.getLanguage();}catch(e){}return navigator.language||'en';}};
+const STR={
+ ja:{title:'いろテスト',rec:'記録 ',recU:' 問',q:'　文字が表す「色」を選びなさい。',qp:'問',intro:'文字の「意味」の色を選ぶ。<br>文字が塗られた色にだまされないこと。',start:'はじめる',result:'採点結果',correct:'正解 ',correctU:' 問',pts:'点',wrong:'不正解',timeup:'時間切れ',again:'もう一度',hanko:'新記録',
+     colors:['あか','あお','みどり','きいろ']},
+ en:{title:'COLOR TEST',rec:'Best ',recU:'',q:'  Pick the color the word MEANS.',qp:'Q',intro:'Choose the color the word means.<br>Don\'t be fooled by the ink color.',start:'Start',result:'Results',correct:'Correct: ',correctU:'',pts:' pts',wrong:'Wrong',timeup:'Time up',again:'Try again',hanko:'NEW BEST',
+     colors:['RED','BLUE','GREEN','YELLOW']}};
+let L=STR.en;
 let actx=null;
-function beep(f=440,d=.08,type='square',g=.06){ if(!YT.audio) return; try{ actx=actx||new (AudioContext||webkitAudioContext)(); const o=actx.createOscillator(),v=actx.createGain(); o.type=type;o.frequency.value=f;v.gain.value=g;o.connect(v);v.connect(actx.destination);o.start();v.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.stop(actx.currentTime+d);}catch(e){} }
+function tone(f,d,type,g){if(!YT.audio)return;try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),v=actx.createGain();o.type=type||'sine';o.frequency.value=f;v.gain.value=g||.06;o.connect(v);v.connect(actx.destination);o.start();v.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.stop(actx.currentTime+d);}catch(e){}}
 
-const COLORS=[{n:'あか',c:'#ff4d5a'},{n:'あお',c:'#3d8bff'},{n:'みどり',c:'#2ecc71'},{n:'きいろ',c:'#ffd23f'}];
+const COLORS=[{c:'#d2453c'},{c:'#2f5fb3'},{c:'#3b9a55'},{c:'#e9c23a'}];
 const $=id=>document.getElementById(id);
-let score=0,best=0,answer=0,timeMax=2000,timeLeft=0,paused=false,playing=false,games=0,lastT=0;
-const grid=$('grid');
-COLORS.forEach((c,i)=>{const b=document.createElement('button');b.className='b';b.style.background=c.c;b.textContent=c.n;b.onclick=()=>tap(i);grid.appendChild(b);});
+let score=0,best=0,ans=0,tMax=2000,tLeft=0,paused=false,playing=false,games=0,lastT=0;
+COLORS.forEach((c,i)=>{const b=document.createElement('button');b.className='chip';b.style.background=c.c;b.setAttribute('data-i',i);b.onclick=()=>tap(i);$('grid').appendChild(b);});
 
 function next(){
-  answer=Math.floor(Math.random()*4);
-  let ink=Math.floor(Math.random()*4); if(score<3) ink=answer;   // 最初は素直
-  $('word').textContent=COLORS[answer].n; $('word').style.color=COLORS[ink].c;
-  timeMax=Math.max(700,2000-score*45); timeLeft=timeMax;
+  ans=Math.floor(Math.random()*4);let ink=Math.floor(Math.random()*4);if(score<3)ink=ans;
+  $('word').textContent=L.colors[ans];$('word').style.color=COLORS[ink].c;$('qn').textContent=score+1;
+  tMax=Math.max(650,2000-score*45);tLeft=tMax;
 }
-function tap(i){
-  if(!playing||paused) return;
-  if(i===answer){score++;$('score').textContent=score;beep(600+score*15,.07,'sine',.07);next();}
-  else over('ちがう色！');
-}
+function stamp(ch){const m=$('mark');m.textContent=ch;m.classList.remove('on');void m.offsetWidth;m.classList.add('on');setTimeout(()=>m.classList.remove('on'),260);}
+function tap(i){if(!playing||paused)return;
+  if(i===ans){score++;stamp('○');tone(880+score*12,.08,'sine',.06);next();}
+  else{stamp('×');over(L.wrong);}}
 async function over(reason){
-  playing=false; beep(100,.4,'sawtooth',.1);
-  $('app').classList.add('shake'); setTimeout(()=>$('app').classList.remove('shake'),300);
-  if(score>best){best=score;await YT.save({best});}
-  $('best').textContent='ベスト '+best; YT.score(score);
-  $('ov').querySelector('h1').textContent=score; $('ov').querySelector('p').textContent=reason+'\nベスト '+best; $('start').textContent='もう一度';
-  $('ov').classList.remove('hidden');
-  if(++games%3===0) await YT.ad();
+  playing=false;tone(160,.35,'sawtooth',.08);
+  const isNew=score>best&&score>0;if(score>best){best=score;await YT.save({best});}
+  $('best').textContent=best;YT.score(score);
+  $('ttl').textContent=L.result;$('body').innerHTML=reason+(L===STR.ja?'。':'.')+'<br>'+L.correct+'<b>'+score+'</b>'+L.correctU;$('pts').textContent=score+L.pts;$('pts').classList.remove('hidden');
+  $('hanko').classList.toggle('hidden',!isNew);$('start').textContent=L.again;
+  setTimeout(()=>$('sheet').classList.remove('hidden'),350);
+  games++;if(games%3===0)await YT.ad();
 }
-$('start').onclick=()=>{score=0;$('score').textContent='0';$('ov').classList.add('hidden');playing=true;lastT=performance.now();next();};
-function loop(t){
-  requestAnimationFrame(loop);
-  if(!playing||paused){lastT=t;return;}
-  timeLeft-=t-lastT; lastT=t;
-  $('fill').style.transform=`scaleX(${Math.max(0,timeLeft/timeMax)})`;
-  if(timeLeft<=0) over('時間切れ');
-}
-(async()=>{
-  YT.init(); const s=await YT.load(); best=s.best||0; $('best').textContent=best?'ベスト '+best:'';
-  YT.firstFrame(); requestAnimationFrame(loop); YT.ready();
-})();
+$('start').onclick=()=>{score=0;$('sheet').classList.add('hidden');playing=true;lastT=performance.now();next();};
+function loop(t){requestAnimationFrame(loop);if(!playing||paused){lastT=t;return;}tLeft-=t-lastT;lastT=t;
+  $('fill').style.transform='scaleX('+Math.max(0,tLeft/tMax)+')';if(tLeft<=0)over(L.timeup);}
+(async()=>{YT.init();L=YT.lang().toLowerCase().startsWith('ja')?STR.ja:STR.en;document.title=L.title;
+  $('t-title').textContent=L.title;$('t-rec').textContent=L.rec;$('t-recU').textContent=L.recU;$('t-qp').textContent=L.qp;$('t-q').textContent=L.q;
+  $('ttl').textContent=L.title;$('body').innerHTML=L.intro;$('start').textContent=L.start;$('hanko').textContent=L.hanko;
+  document.querySelectorAll('.chip').forEach((b,i)=>b.setAttribute('aria-label',L.colors[i]));
+  if(L===STR.en){$('word').style.fontSize='64px';$('word').style.letterSpacing='.02em';}
+  const s=await YT.load();best=s.best||0;$('best').textContent=best;YT.firstFrame();requestAnimationFrame(loop);YT.ready();})();
 </script>
 </body>
 </html>
