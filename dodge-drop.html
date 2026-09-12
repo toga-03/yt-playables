@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Dodge Drop</title>
+<script src="https://www.youtube.com/game_api/v1"></script>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#fff3d6;touch-action:none;-webkit-user-select:none;user-select:none;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
+  canvas{display:block;width:100%;height:100%}
+  #ui{position:fixed;inset:0;pointer-events:none;color:#3b2a1a;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:max(24px,env(safe-area-inset-top)) 0 max(56px,env(safe-area-inset-bottom))}
+  #score{font-size:56px;font-weight:900;letter-spacing:-1px}
+  #best{font-size:14px;opacity:.6;text-align:center}
+  #msg{font-size:18px;text-align:center;line-height:1.6;white-space:pre-line;background:rgba(255,255,255,.7);padding:12px 20px;border-radius:14px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui"><div><div id="score">0</div><div id="best"></div></div><div id="msg">左右にドラッグして避ける
+タップでスタート</div></div>
+<script>
+const YT = {
+  env: typeof ytgame !== 'undefined' && ytgame.IN_PLAYABLES_ENV, audio:true,
+  init(){ if(!this.env) return; this.audio=ytgame.system.isAudioEnabled(); ytgame.system.onAudioEnabledChange(v=>this.audio=v); ytgame.system.onPause(()=>paused=true); ytgame.system.onResume(()=>paused=false); },
+  async load(){ try{ if(this.env){const s=await ytgame.game.loadData(); return s?JSON.parse(s):{};} }catch(e){} return {}; },
+  async save(o){ if(this.env) try{ await ytgame.game.saveData(JSON.stringify(o)); }catch(e){} },
+  score(v){ if(this.env) try{ ytgame.engagement.sendScore({value:v}); }catch(e){} },
+  async ad(){ if(this.env&&ytgame.ads) try{ await ytgame.ads.requestInterstitialAd(); }catch(e){} },
+  firstFrame(){ if(this.env) ytgame.game.firstFrameReady(); }, ready(){ if(this.env) ytgame.game.gameReady(); }
+};
+let actx=null;
+function beep(f=440,d=.08,type='square',g=.06){ if(!YT.audio) return; try{ actx=actx||new (AudioContext||webkitAudioContext)(); const o=actx.createOscillator(),v=actx.createGain(); o.type=type;o.frequency.value=f;v.gain.value=g;o.connect(v);v.connect(actx.destination);o.start();v.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.stop(actx.currentTime+d);}catch(e){} }
+
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const scoreEl=document.getElementById('score'),msgEl=document.getElementById('msg'),bestEl=document.getElementById('best');
+let W,H;function resize(){const d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;ctx.setTransform(d,0,0,d,0,0);}addEventListener('resize',resize);resize();
+
+let px, pr=22, rocks=[], t=0, score=0, best=0, state='title', paused=false, games=0, spawnT=0, shake=0, coins=[], dragX=null, dragPX=0;
+function reset(){px=W/2;rocks=[];coins=[];t=0;score=0;spawnT=0;state='play';scoreEl.textContent='0';msgEl.style.opacity=0;}
+async function over(){
+  state='over';shake=12;beep(90,.4,'sawtooth',.1);
+  if(score>best){best=score;await YT.save({best});}
+  bestEl.textContent='ベスト '+best; YT.score(score);
+  msgEl.textContent='ゲームオーバー\nタップでもう一度'; msgEl.style.opacity=1;
+  if(++games%3===0) await YT.ad();
+}
+cv.addEventListener('pointerdown',e=>{e.preventDefault();if(paused)return;
+  if(state!=='play'){reset();return;} dragX=e.clientX;dragPX=px;},{passive:false});
+cv.addEventListener('pointermove',e=>{if(dragX!==null&&state==='play'){px=Math.max(pr,Math.min(W-pr,dragPX+(e.clientX-dragX)*1.4));}});
+addEventListener('pointerup',()=>dragX=null);
+
+function drawPlayer(){
+  ctx.save();ctx.translate(px,H*.82);
+  ctx.fillStyle='#ff6b4a';ctx.beginPath();ctx.arc(0,0,pr,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-7,-4,6,0,7);ctx.arc(7,-4,6,0,7);ctx.fill();
+  ctx.fillStyle='#3b2a1a';const lx=dragX!==null?Math.sign(px-dragPX)*2:0;ctx.beginPath();ctx.arc(-7+lx,-4,3,0,7);ctx.arc(7+lx,-4,3,0,7);ctx.fill();
+  ctx.strokeStyle='#3b2a1a';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,5,7,.2,Math.PI-.2);ctx.stroke();
+  ctx.restore();
+}
+let last=0;
+function loop(ts){
+  requestAnimationFrame(loop); if(paused){last=ts;return;}
+  const dt=Math.min((ts-last)/16.7,3);last=ts;
+  ctx.save();
+  if(shake>0){ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);shake-=dt;}
+  ctx.fillStyle='#fff3d6';ctx.fillRect(-20,-20,W+40,H+40);
+  // 地面
+  ctx.fillStyle='#ffd591';ctx.fillRect(0,H*.82+pr,W,H);
+  if(state==='play'){
+    t+=dt; const diff=1+t/900;
+    spawnT-=dt; if(spawnT<=0){spawnT=Math.max(12,40/diff);
+      const r=14+Math.random()*22; rocks.push({x:r+Math.random()*(W-2*r),y:-r,r,vy:(3+Math.random()*2.5)*diff,rot:Math.random()*6,vr:(Math.random()-.5)*.1});
+      if(Math.random()<.25) coins.push({x:20+Math.random()*(W-40),y:-10,vy:3*diff});}
+    score=Math.floor(t/10); scoreEl.textContent=score;
+  }
+  rocks=rocks.filter(r=>r.y<H+60);
+  rocks.forEach(r=>{ if(state==='play'){r.y+=r.vy*dt;r.rot+=r.vr*dt;}
+    ctx.save();ctx.translate(r.x,r.y);ctx.rotate(r.rot);ctx.fillStyle='#6d5a4a';
+    ctx.beginPath();for(let i=0;i<7;i++){const a=i/7*Math.PI*2,rr=r.r*(.8+(i%2)*.2);ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);}ctx.closePath();ctx.fill();
+    ctx.fillStyle='#8a7462';ctx.beginPath();ctx.arc(-r.r*.3,-r.r*.3,r.r*.3,0,7);ctx.fill();ctx.restore();
+    if(state==='play'&&Math.hypot(r.x-px,r.y-H*.82)<r.r+pr-4) over();
+  });
+  coins=coins.filter(c=>c.y<H+20&&!c.got);
+  coins.forEach(c=>{ if(state==='play')c.y+=c.vy*dt;
+    ctx.fillStyle='#ffc233';ctx.beginPath();ctx.arc(c.x,c.y,9,0,7);ctx.fill();ctx.fillStyle='#e0980f';ctx.beginPath();ctx.arc(c.x,c.y,5,0,7);ctx.fill();
+    if(state==='play'&&Math.hypot(c.x-px,c.y-H*.82)<pr+9){c.got=true;t+=50;beep(1200,.1,'sine',.07);}
+  });
+  drawPlayer();
+  ctx.restore();
+}
+(async()=>{
+  YT.init(); const s=await YT.load(); best=s.best||0; bestEl.textContent=best?'ベスト '+best:''; px=W/2;
+  YT.firstFrame(); requestAnimationFrame(loop); YT.ready();
+})();
+</script>
+</body>
+</html>

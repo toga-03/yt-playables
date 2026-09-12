@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Stack Tower</title>
+<script src="https://www.youtube.com/game_api/v1"></script>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#12162b;touch-action:none;-webkit-user-select:none;user-select:none;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif}
+  canvas{display:block;width:100%;height:100%}
+  #ui{position:fixed;inset:0;pointer-events:none;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:max(24px,env(safe-area-inset-top)) 0 max(48px,env(safe-area-inset-bottom))}
+  #score{font-size:64px;font-weight:800;letter-spacing:-2px;text-shadow:0 4px 0 rgba(0,0,0,.25)}
+  #msg{font-size:18px;opacity:.85;text-align:center;line-height:1.5}
+  #best{font-size:14px;opacity:.6;margin-top:6px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div><div id="score">0</div><div id="best"></div></div>
+  <div id="msg">タップでブロックを積む</div>
+</div>
+<script>
+// ---------- YouTube Playables 連携 ----------
+const YT = {
+  env: typeof ytgame !== 'undefined' && ytgame.IN_PLAYABLES_ENV,
+  audio: true,
+  async init(){
+    if(!this.env) return;
+    this.audio = ytgame.system.isAudioEnabled();
+    ytgame.system.onAudioEnabledChange(v=>this.audio=v);
+    ytgame.system.onPause(()=>pause(true));
+    ytgame.system.onResume(()=>pause(false));
+  },
+  async load(){
+    try{
+      if(this.env){ const s = await ytgame.game.loadData(); return s? JSON.parse(s):{}; }
+      return {};
+    }catch(e){ return {}; }
+  },
+  async save(o){ if(this.env){ try{ await ytgame.game.saveData(JSON.stringify(o)); }catch(e){} } },
+  score(v){ if(this.env) try{ ytgame.engagement.sendScore({value:v}); }catch(e){} },
+  async ad(){ if(this.env && ytgame.ads) try{ await ytgame.ads.requestInterstitialAd(); }catch(e){} },
+  firstFrame(){ if(this.env) ytgame.game.firstFrameReady(); },
+  ready(){ if(this.env) ytgame.game.gameReady(); }
+};
+
+// ---------- 音 ----------
+let actx=null;
+function beep(f=440,d=.08,type='square',g=.06){
+  if(!YT.audio) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(), v=actx.createGain();
+    o.type=type;o.frequency.value=f;v.gain.value=g;
+    o.connect(v);v.connect(actx.destination);
+    o.start();v.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.stop(actx.currentTime+d);
+  }catch(e){}
+}
+
+// ---------- ゲーム ----------
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+const scoreEl=document.getElementById('score'), msgEl=document.getElementById('msg'), bestEl=document.getElementById('best');
+let W,H,dpr;
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}
+addEventListener('resize',resize);resize();
+
+const BH=28;               // ブロック高さ
+let blocks, cur, dir, speed, score, best=0, state, camY, camTarget, paused=false, debris, games=0, hue0;
+
+function hue(i){return (hue0+i*9)%360}
+function reset(){
+  blocks=[{x:W*.25,w:W*.5,y:0}];
+  score=0; camY=0; camTarget=0; debris=[]; speed=2.6; hue0=Math.random()*360;
+  spawn(); state='play';
+  scoreEl.textContent='0'; msgEl.textContent='タップで止める';
+}
+function spawn(){
+  const top=blocks[blocks.length-1];
+  dir = blocks.length%2? 1:-1;
+  cur={x: dir>0? -top.w : W, w: top.w, y: blocks.length*BH};
+  speed = 2.6 + score*0.12;
+}
+function drop(){
+  const top=blocks[blocks.length-1];
+  const overlap = Math.min(cur.x+cur.w, top.x+top.w) - Math.max(cur.x, top.x);
+  if(overlap<=4){ // 失敗
+    debris.push({x:cur.x,w:cur.w,y:cur.y,vy:0,vx:dir*2,h:hue(blocks.length)});
+    gameOver(); return;
+  }
+  const nx = Math.max(cur.x, top.x);
+  // はみ出し部分を落とす
+  if(cur.x<top.x) debris.push({x:cur.x,w:top.x-cur.x,y:cur.y,vy:0,vx:-2,h:hue(blocks.length)});
+  if(cur.x+cur.w>top.x+top.w) debris.push({x:top.x+top.w,w:cur.x+cur.w-top.x-top.w,y:cur.y,vy:0,vx:2,h:hue(blocks.length)});
+  const perfect = Math.abs(cur.x-top.x)<6;
+  const nb={x:perfect?top.x:nx, w:perfect?top.w:overlap, y:cur.y};
+  if(perfect){ beep(880,.12,'sine',.08); setTimeout(()=>beep(1320,.12,'sine',.08),60); flash=1; }
+  else beep(300+overlap,.06);
+  blocks.push(nb); score++; scoreEl.textContent=score;
+  if(blocks.length*BH > H*.45) camTarget = blocks.length*BH - H*.45;
+  spawn();
+}
+let flash=0;
+async function gameOver(){
+  state='over'; beep(120,.35,'sawtooth',.08);
+  if(score>best){best=score;await YT.save({best});}
+  bestEl.textContent='ベスト '+best;
+  YT.score(score);
+  msgEl.textContent='ゲームオーバー\nタップでもう一度';
+  games++;
+  if(games%3===0) await YT.ad();
+}
+function pause(p){paused=p;}
+
+function tap(e){
+  e.preventDefault();
+  if(paused) return;
+  if(state==='play') drop();
+  else if(state==='over') reset();
+  else if(state==='title') reset();
+}
+cv.addEventListener('pointerdown',tap,{passive:false});
+
+function drawBlock(b,h,alpha=1){
+  ctx.globalAlpha=alpha;
+  const y=H- (b.y-camY) - BH - H*.12;
+  ctx.fillStyle=`hsl(${h} 70% 55%)`;ctx.fillRect(b.x,y,b.w,BH);
+  ctx.fillStyle=`hsl(${h} 70% 68%)`;ctx.fillRect(b.x,y,b.w,5);
+  ctx.fillStyle=`hsl(${h} 70% 40%)`;ctx.fillRect(b.x,y+BH-5,b.w,5);
+  ctx.globalAlpha=1;
+}
+let last=0;
+function loop(t){
+  requestAnimationFrame(loop);
+  if(paused) {last=t;return;}
+  const dt=Math.min((t-last)/16.7,3); last=t;
+  // 背景
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,`hsl(${(hue0||220)} 45% 14%)`);g.addColorStop(1,`hsl(${(hue0||220)+40} 45% 26%)`);
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  if(flash>0){ctx.fillStyle=`rgba(255,255,255,${flash*.25})`;ctx.fillRect(0,0,W,H);flash-=.06*dt;}
+  camY += (camTarget-camY)*.1*dt;
+  blocks.forEach((b,i)=>drawBlock(b,hue(i)));
+  if(state==='play'){
+    cur.x += dir*speed*dt;
+    if(dir>0 && cur.x>W) cur.x=-cur.w; if(dir<0 && cur.x+cur.w<0) cur.x=W;
+    drawBlock(cur,hue(blocks.length));
+  }
+  debris=debris.filter(d=>d.y>camY-H);
+  debris.forEach(d=>{d.vy-=.5*dt;d.y+=d.vy*dt;d.x+=d.vx*dt;drawBlock(d,d.h,.8);});
+}
+(async()=>{
+  await YT.init();
+  const s=await YT.load(); best=s.best||0; bestEl.textContent=best?'ベスト '+best:'';
+  hue0=Math.random()*360; blocks=[{x:W*.25,w:W*.5,y:0}]; cur={x:0,w:0,y:BH}; debris=[]; camY=0;camTarget=0; state='title';
+  YT.firstFrame();
+  requestAnimationFrame(loop);
+  YT.ready();
+})();
+</script>
+</body>
+</html>
